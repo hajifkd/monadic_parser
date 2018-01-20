@@ -1,46 +1,26 @@
-use std::fmt;
+type ParsedResult<'a, S> = (S, &'a str);
 
-struct ParsedResult<'a, S> {
-    res: S,
-    out: &'a str,
-}
-
-impl<'a, S> fmt::Debug for ParsedResult<'a, S>
-where
-    S: fmt::Display,
-{
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "ParsedResult {{ res: {}, out: {} }}", self.res, self.out)
-    }
+fn out<'a, S>(out: &ParsedResult<'a, S>) -> &'a str {
+    out.1
 }
 
 type ParserOut<'a, S> = Option<ParsedResult<'a, S>>;
 
-impl<'a, S> ParsedResult<'a, S> {
-    fn new(s: &'a str) -> ParsedResult<'a, ()> {
-        ParsedResult { res: (), out: s }
-    }
-}
-
-fn item<'a, S>(out: &ParsedResult<'a, S>) -> ParserOut<'a, char> {
-    let &ParsedResult { ref out, .. } = out;
-
+fn item<'a>(out: &'a str) -> ParserOut<'a, char> {
     if out.is_empty() {
         None
     } else {
         let (res, out) = out.split_at(1);
-        Some(ParsedResult {
-            res: res.chars().next().unwrap(),
-            out: out,
-        })
+        Some((res.chars().next().unwrap(), out))
     }
 }
 
 macro_rules! sat {
     ($n: ident, $f: expr) => {
-        fn $n<'a, S>(out: &ParsedResult<'a, S>) -> ParserOut<'a, char> {
+        fn $n<'a>(out: &'a str) -> ParserOut<'a, char> {
             let item = item(out)?;
-            if $f(item.res) {
+            let (res, _) = item;
+            if $f(res) {
                 Some(item)
             } else {
                 None
@@ -55,38 +35,51 @@ sat!(upper, |x: char| x.is_uppercase());
 sat!(letter, |x: char| x.is_alphabetic());
 sat!(alphanum, |x: char| x.is_alphanumeric());
 
-fn char<'a, S>(out: &ParsedResult<'a, S>, x: char) -> ParserOut<'a, char> {
+fn character<'a>(out: &'a str, x: char) -> ParserOut<'a, char> {
     let item = item(out)?;
-    if item.res == x {
+    let (res, _) = item;
+    if res == x {
         Some(item)
     } else {
         None
     }
 }
 
-/*fn many<'a, S, F, T, U>(out: &ParsedResult<'a, S>, p: F) -> ParserOut<'a, Vec<U>>
+fn many<'a, F, T>(out: &'a str, p: F) -> ParserOut<'a, Vec<T>>
 where
-    F: Fn(&ParsedResult<'a, T>) -> U,
+    F: Fn(&'a str) -> ParserOut<'a, T>,
 {
-    let result = vec![];
-    let mut output = *out;
-    let mut parse_result = Some(output);
+    let mut result = vec![];
+    let mut output = out;
+    let mut parse_result = p(output);
 
     while let Some(o) = parse_result {
-        output = o;
-        parse_result = p(&output);
+        let (res, out) = o;
+        output = out;
+        result.push(res);
+        parse_result = p(output);
     }
 
-    Some(ParsedResult { res: result, out: output.out })
-}*/
+    Some((result, output))
+}
 
-fn parse<'a>(input: &ParsedResult<'a, ()>) -> ParserOut<'a, char> {
-    let output = char(&input, 'a')?;
+fn number<'a>(out: &'a str) -> ParserOut<'a, i64> {
+    let (f, out) = digit(out)?;
+    let (v, out) = many(out, digit)?;
+    let mut result = f.to_digit(10)? as _;
+    v.iter().for_each(|x| {
+        let x = x.to_digit(10).unwrap() as i64;
+        result = result * 10 + x;
+    });
+    Some((result, out))
+}
 
-    Some(output)
+fn parse<'a>(input: &'a str) -> ParserOut<'a, i64> {
+    let output = character(input, 'a')?;
+    let num = number(out(&output))?;
+    Some(num)
 }
 
 fn main() {
-    let input = ParsedResult::<()>::new("abcd");
-    println!("{:?}", parse(&input));
+    println!("{:?}", parse("a123784bcd"));
 }
