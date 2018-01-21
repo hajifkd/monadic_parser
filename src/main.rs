@@ -79,12 +79,40 @@ fn character<'a>(input: &'a str, x: char) -> ParserOut<'a, char> {
     })
 }
 
-fn many<'a, F, T>(out: &'a str, p: F) -> ParserOut<'a, Vec<T>>
+fn or_<'a, F, G, T>(input: &'a str, p: F, q: G) -> ParserOut<'a, T>
+where
+    F: Fn(&'a str) -> ParserOut<'a, T>,
+    G: Fn(&'a str) -> ParserOut<'a, T>,
+{
+    if let Some(item) = p(input) {
+        Some(item)
+    } else {
+        q(input)
+    }
+}
+
+fn many1<'a, F, T>(input: &'a str, p: F) -> ParserOut<'a, Vec<T>>
 where
     F: Fn(&'a str) -> ParserOut<'a, T>,
 {
-    let mut result = vec![];
-    let mut output = out;
+    pdo!(input => {
+        let first <- p();
+        many_(p, vec![first])
+    })
+}
+
+fn many<'a, F, T>(input: &'a str, p: F) -> ParserOut<'a, Vec<T>>
+where
+    F: Fn(&'a str) -> ParserOut<'a, T>,
+{
+    many_(input, p, vec![])
+}
+
+fn many_<'a, F, T>(input: &'a str, p: F, mut result: Vec<T>) -> ParserOut<'a, Vec<T>>
+where
+    F: Fn(&'a str) -> ParserOut<'a, T>,
+{
+    let mut output = input;
     let mut parse_result = p(output);
 
     while let Some(o) = parse_result {
@@ -99,12 +127,10 @@ where
 
 fn number<'a>(input: &'a str) -> ParserOut<'a, i64> {
     pdo!(input => {
-      let f <- digit();
-      let v <- many(digit);
-      return {
-          Some(v.iter().fold(f.to_digit(10).unwrap() as _,
-                             |acc, &x| acc * 10 + x.to_digit(10).unwrap() as i64))
-      }
+        let v <- many(digit);
+        return {
+            Some(v.iter().fold(0, |acc, &x| acc * 10 + x.to_digit(10).unwrap() as i64))
+        }
     })
 }
 
