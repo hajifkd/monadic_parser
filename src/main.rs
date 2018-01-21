@@ -3,17 +3,39 @@ type ParsedResult<'a, S> = (S, &'a str);
 type ParserOut<'a, S> = Option<ParsedResult<'a, S>>;
 
 macro_rules! pdo {
-  ( $input: expr => { let $val: ident <- $func: ident $($e: expr),* ; $($stmt: tt)* } => $out: ident ) => (
-    let ($val, _out) = $func(&$input, $($e),*)?;
-    pdo!(_out => { $($stmt)* } => $out);
-  );
+    ( $input: expr => { let $val: ident <- return $e: expr ; $($stmt: tt)* } ) => {{
+        let $val = $e;
+        pdo!($input => { $($stmt)* })
+    }};
 
-  ( $input: expr => { $func: ident $($e: expr),* ; $($stmt: tt)* } => $out: ident ) => (
-    let (_, _out) = $func(&$input, $($e),*)?;
-    pdo!(_out => { $($stmt)* } => $out);
-  );
+    ( $input: expr => { let $val: ident <- $func: ident ($($e: expr),*) ; $($stmt: tt)* } ) => {{
+        let ($val, _out) = $func(&$input, $($e),*)?;
+        pdo!(_out => { $($stmt)* })
+    }};
 
-  ( $input: expr => {} => $out: ident ) => ( let $out = $input; )
+    ( $input: expr => { return $e: expr ; $($stmt: tt)* } ) => {{
+        Some(($e, $input));
+        pdo!($input => { $($stmt)* })
+    }};
+
+    ( $input: expr => { $func: ident ($($e: expr),*) ; $($stmt: tt)* } ) => {{
+        let (_, _out) = $func(&$input, $($e),*)?;
+        pdo!(_out => { $($stmt)* })
+    }};
+
+    ( $input: expr => { return $e: expr } ) => {{
+        if let Some(_r) = $e {
+            Some((_r, $input))
+        } else {
+            None
+        }
+    }};
+
+    ( $input: expr => { $func: ident ($($e: expr),*) } ) => {{
+        $func(&$input, $($e),*)
+    }};
+
+    ( $input: expr => {} ) => {{ Some(((), $input)) }}
 }
 
 fn item<'a>(out: &'a str) -> ParserOut<'a, char> {
@@ -29,14 +51,13 @@ macro_rules! sat {
     ($n: ident, $f: expr) => {
         fn $n<'a>(input: &'a str) -> ParserOut<'a, char> {
             pdo!(input => {
-              let res <- item;
-            } => output);
-
-            if $f(res) {
-                Some((res, output))
-            } else {
-                None
-            }
+                let res <- item();
+                return if $f(res) {
+                    Some(res)
+                } else {
+                    None
+                }
+            })
         }
     };
 }
@@ -47,14 +68,15 @@ sat!(upper, |x: char| x.is_uppercase());
 sat!(letter, |x: char| x.is_alphabetic());
 sat!(alphanum, |x: char| x.is_alphanumeric());
 
-fn character<'a>(out: &'a str, x: char) -> ParserOut<'a, char> {
-    let item = item(out)?;
-    let (res, _) = item;
-    if res == x {
-        Some(item)
-    } else {
-        None
-    }
+fn character<'a>(input: &'a str, x: char) -> ParserOut<'a, char> {
+    pdo!(input => {
+        let res <- item();
+        return if res == x {
+            Some(res)
+        } else {
+            None
+        }
+    })
 }
 
 fn many<'a, F, T>(out: &'a str, p: F) -> ParserOut<'a, Vec<T>>
@@ -77,25 +99,20 @@ where
 
 fn number<'a>(input: &'a str) -> ParserOut<'a, i64> {
     pdo!(input => {
-      let f <- digit;
-      let v <- many digit;
-    } => out);
-
-    let mut result = f.to_digit(10)? as _;
-    v.iter().for_each(|x| {
-        let x = x.to_digit(10).unwrap() as i64;
-        result = result * 10 + x;
-    });
-    Some((result, out))
+      let f <- digit();
+      let v <- many(digit);
+      return {
+          Some(v.iter().fold(f.to_digit(10).unwrap() as _,
+                             |acc, &x| acc * 10 + x.to_digit(10).unwrap() as i64))
+      }
+    })
 }
 
 fn parse<'a>(input: &'a str) -> ParserOut<'a, i64> {
     pdo!(input => {
-      character 'a';
-      let num <- number;
-    } => output);
-
-    Some((num, output))
+        character('a');
+        number()
+    })
 }
 
 fn main() {
