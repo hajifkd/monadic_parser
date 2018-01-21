@@ -1,10 +1,20 @@
 type ParsedResult<'a, S> = (S, &'a str);
 
-fn out<'a, S>(out: &ParsedResult<'a, S>) -> &'a str {
-    out.1
-}
-
 type ParserOut<'a, S> = Option<ParsedResult<'a, S>>;
+
+macro_rules! pdo {
+  ( $input: expr => { let $val: ident <- $func: ident $($e: expr),* ; $($stmt: tt)* } => $out: ident ) => (
+    let ($val, _out) = $func(&$input, $($e),*)?;
+    pdo!(_out => { $($stmt)* } => $out);
+  );
+
+  ( $input: expr => { $func: ident $($e: expr),* ; $($stmt: tt)* } => $out: ident ) => (
+    let (_, _out) = $func(&$input, $($e),*)?;
+    pdo!(_out => { $($stmt)* } => $out);
+  );
+
+  ( $input: expr => {} => $out: ident ) => ( let $out = $input; )
+}
 
 fn item<'a>(out: &'a str) -> ParserOut<'a, char> {
     if out.is_empty() {
@@ -17,11 +27,13 @@ fn item<'a>(out: &'a str) -> ParserOut<'a, char> {
 
 macro_rules! sat {
     ($n: ident, $f: expr) => {
-        fn $n<'a>(out: &'a str) -> ParserOut<'a, char> {
-            let item = item(out)?;
-            let (res, _) = item;
+        fn $n<'a>(input: &'a str) -> ParserOut<'a, char> {
+            pdo!(input => {
+              let res <- item;
+            } => output);
+
             if $f(res) {
-                Some(item)
+                Some((res, output))
             } else {
                 None
             }
@@ -63,9 +75,12 @@ where
     Some((result, output))
 }
 
-fn number<'a>(out: &'a str) -> ParserOut<'a, i64> {
-    let (f, out) = digit(out)?;
-    let (v, out) = many(out, digit)?;
+fn number<'a>(input: &'a str) -> ParserOut<'a, i64> {
+    pdo!(input => {
+      let f <- digit;
+      let v <- many digit;
+    } => out);
+
     let mut result = f.to_digit(10)? as _;
     v.iter().for_each(|x| {
         let x = x.to_digit(10).unwrap() as i64;
@@ -75,9 +90,12 @@ fn number<'a>(out: &'a str) -> ParserOut<'a, i64> {
 }
 
 fn parse<'a>(input: &'a str) -> ParserOut<'a, i64> {
-    let output = character(input, 'a')?;
-    let num = number(out(&output))?;
-    Some(num)
+    pdo!(input => {
+      character 'a';
+      let num <- number;
+    } => output);
+
+    Some((num, output))
 }
 
 fn main() {
