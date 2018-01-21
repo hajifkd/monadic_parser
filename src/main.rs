@@ -14,7 +14,7 @@ macro_rules! pdo {
     }};
 
     ( $input: expr => { return $e: expr ; $($stmt: tt)* } ) => {{
-        Some(($e, $input));
+        $e;
         pdo!($input => { $($stmt)* })
     }};
 
@@ -25,7 +25,7 @@ macro_rules! pdo {
 
     ( $input: expr => { return $e: expr } ) => {{
         if let Some(_r) = $e {
-            Some((_r, $input))
+            (_r, $input).into()
         } else {
             None
         }
@@ -38,14 +38,47 @@ macro_rules! pdo {
     ( $input: expr => {} ) => {{ Some(((), $input)) }}
 }
 
+// Primitive functions
+
 fn item<'a>(out: &'a str) -> ParserOut<'a, char> {
     if out.is_empty() {
         None
     } else {
         let (res, out) = out.split_at(1);
-        Some((res.chars().next().unwrap(), out))
+        (res.chars().next().unwrap(), out).into()
     }
 }
+
+fn or_<'a, F, G, T>(input: &'a str, p: F, q: G) -> ParserOut<'a, T>
+where
+    F: Fn(&'a str) -> ParserOut<'a, T>,
+    G: Fn(&'a str) -> ParserOut<'a, T>,
+{
+    if let Some(item) = p(input) {
+        Some(item)
+    } else {
+        q(input)
+    }
+}
+
+fn many_<'a, F, T>(input: &'a str, p: F, mut result: Vec<T>) -> ParserOut<'a, Vec<T>>
+where
+    F: Fn(&'a str) -> ParserOut<'a, T>,
+{
+    let mut output = input;
+    let mut parse_result = p(output);
+
+    while let Some(o) = parse_result {
+        let (res, out) = o;
+        output = out;
+        result.push(res);
+        parse_result = p(output);
+    }
+
+    (result, output).into()
+}
+
+// End of Primitive functions
 
 macro_rules! sat {
     ($n: ident, $f: expr) => {
@@ -53,7 +86,7 @@ macro_rules! sat {
             pdo!(input => {
                 let res <- item();
                 return if $f(res) {
-                    Some(res)
+                    res.into()
                 } else {
                     None
                 }
@@ -72,23 +105,11 @@ fn character<'a>(input: &'a str, x: char) -> ParserOut<'a, char> {
     pdo!(input => {
         let res <- item();
         return if res == x {
-            Some(res)
+            res.into()
         } else {
             None
         }
     })
-}
-
-fn or_<'a, F, G, T>(input: &'a str, p: F, q: G) -> ParserOut<'a, T>
-where
-    F: Fn(&'a str) -> ParserOut<'a, T>,
-    G: Fn(&'a str) -> ParserOut<'a, T>,
-{
-    if let Some(item) = p(input) {
-        Some(item)
-    } else {
-        q(input)
-    }
 }
 
 fn many1<'a, F, T>(input: &'a str, p: F) -> ParserOut<'a, Vec<T>>
@@ -105,31 +126,16 @@ fn many<'a, F, T>(input: &'a str, p: F) -> ParserOut<'a, Vec<T>>
 where
     F: Fn(&'a str) -> ParserOut<'a, T>,
 {
-    many_(input, p, vec![])
-}
-
-fn many_<'a, F, T>(input: &'a str, p: F, mut result: Vec<T>) -> ParserOut<'a, Vec<T>>
-where
-    F: Fn(&'a str) -> ParserOut<'a, T>,
-{
-    let mut output = input;
-    let mut parse_result = p(output);
-
-    while let Some(o) = parse_result {
-        let (res, out) = o;
-        output = out;
-        result.push(res);
-        parse_result = p(output);
-    }
-
-    Some((result, output))
+    pdo!(input => {
+        many_(p, vec![])
+    })
 }
 
 fn number<'a>(input: &'a str) -> ParserOut<'a, i64> {
     pdo!(input => {
         let v <- many(digit);
         return {
-            Some(v.iter().fold(0, |acc, &x| acc * 10 + x.to_digit(10).unwrap() as i64))
+            v.iter().fold(0, |acc, &x| acc * 10 + x.to_digit(10).unwrap() as i64).into()
         }
     })
 }
