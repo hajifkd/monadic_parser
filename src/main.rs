@@ -23,16 +23,6 @@ macro_rules! pdo {
         pdo!(_out => { $($stmt)* })
     }};
 
-    ( $input: expr => { let $val: ident <- $func: ident ($($e: expr),*) <|> $func2: ident ($($e2: expr),*) ; $($stmt: tt)* } ) => {{
-        let _res = $func(&$input, $($e),*);
-        let ($val, _out) = if let Some((_val, _out)) = _res {
-            (_val, _out)
-        } else {
-            $func2(&$input, $($e2),*)?
-        };
-        pdo!(_out => { $($stmt)* })
-    }};
-
     ( $input: expr => { return $e: expr ; $($stmt: tt)* } ) => {{
         $e?;
         pdo!($input => { $($stmt)* })
@@ -50,16 +40,6 @@ macro_rules! pdo {
 
     ( $input: expr => { $func: ident ($($e: expr),*) ; $($stmt: tt)* } ) => {{
         let (_, _out) = $func(&$input, $($e),*)?;
-        pdo!(_out => { $($stmt)* })
-    }};
-
-    ( $input: expr => { $func: ident ($($e: expr),*) <|> $func2: ident ($($e2: expr),*) ; $($stmt: tt)* } ) => {{
-        let _res = $func(&$input, $($e),*);
-        let (_val, _out) = if let Some((_val, _out)) = _res {
-            (_val, _out)
-        } else {
-            $func2(&$input, $($e2),*)?
-        };
         pdo!(_out => { $($stmt)* })
     }};
 
@@ -86,15 +66,6 @@ macro_rules! pdo {
 
     ( $input: expr => { $func: ident ($($e: expr),*) } ) => {{
         $func(&$input, $($e),*)
-    }};
-
-    ( $input: expr => { $func: ident ($($e: expr),*) <|> $func2: ident ($($e2: expr),*) } ) => {{
-        let _res = $func(&$input, $($e),*);
-        if _res == None {
-            $func2(&$input, $($e2),*)
-        } else {
-            _res
-        }
     }};
 
     ( $input: expr => {} ) => {{ Some(((), $input)) }}
